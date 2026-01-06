@@ -1,0 +1,33 @@
+# PaddleOCR 3.x stack (PP-OCRv5 + PaddleOCR-VL)
+paddlepaddle==3.0.0
+paddleocr==3.0.1
+paddle2onnx==1.3.0
+
+# Model serving
+onnx==1.16.0
+onnxruntime==1.18.0
+tritonclient[http]==2.48.0
+minio==7.2.7
+
+# MLflow
+mlflow==2.14.3
+
+# Data / Image processing
+opencv-python-headless==4.9.0.80
+numpy==1.26.4
+Pillow==10.3.0
+
+# Streaming & Feature Store
+kafka-python==2.0.2
+feast==0.40.0
+redis==5.0.4
+psycopg2-binary==2.9.9
+
+# Utilities
+tqdm==4.66.4
+python-dotenv==1.0.1
+pyyaml==6.0.1
+
+# Testing
+pytest==8.2.2
+pytest-mock==3.14.0

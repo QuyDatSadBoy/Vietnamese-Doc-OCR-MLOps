@@ -1,0 +1,34 @@
+# KServe InferenceService — PP-OCRv4 Vietnamese OCR (ModelMesh)
+# Author: Trần Quý Đạt | tranquydat.work@gmail.com
+---
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: vn-doc-ocr-det
+  namespace: modelmesh-serving
+  annotations:
+    serving.kserve.io/deploymentMode: ModelMesh
+    serving.kserve.io/secretKey: localMinIO
+spec:
+  predictor:
+    model:
+      modelFormat:
+        name: onnx
+      runtime: triton-2.x
+      storageUri: s3://modelmesh-models/ocr/vn_doc_ocr_det
+---
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: vn-doc-ocr-rec
+  namespace: modelmesh-serving
+  annotations:
+    serving.kserve.io/deploymentMode: ModelMesh
+    serving.kserve.io/secretKey: localMinIO
+spec:
+  predictor:
+    model:
+      modelFormat:
+        name: onnx
+      runtime: triton-2.x
+      storageUri: s3://modelmesh-models/ocr/vn_doc_ocr_rec

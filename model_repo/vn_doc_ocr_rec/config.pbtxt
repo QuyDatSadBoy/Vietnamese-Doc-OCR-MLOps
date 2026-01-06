@@ -1,0 +1,31 @@
+# Triton model config — PP-OCRv4 Text Recognition
+# Author: Trần Quý Đạt | tranquydat.work@gmail.com
+# Input : cropped text-line image (CHW, RGB, normalised)
+# Output: CTC log-probabilities over Vietnamese vocabulary
+
+name: "vn_doc_ocr_rec"
+backend: "onnxruntime"
+max_batch_size: 8
+
+input [
+  {
+    name: "x"
+    data_type: TYPE_FP32
+    dims: [ 3, 48, 320 ]    # [C, H=48, W=320] fixed for PP-OCRv4 rec
+  }
+]
+
+output [
+  {
+    name: "softmax_0.tmp_0"
+    data_type: TYPE_FP32
+    dims: [ -1, 213 ]       # [time_steps, vocab_size(212 chars + blank)]
+  }
+]
+
+instance_group [{ kind: KIND_CPU, count: 1 }]
+
+dynamic_batching {
+  preferred_batch_size: [ 1, 4, 8 ]
+  max_queue_delay_microseconds: 100
+}

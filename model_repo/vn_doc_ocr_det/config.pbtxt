@@ -1,0 +1,28 @@
+# Triton model config — PP-OCRv4 Text Detection
+# Author: Trần Quý Đạt | tranquydat.work@gmail.com
+# Input : document image (CHW, RGB, normalised)
+# Output: probability map (sigmoid)
+
+name: "vn_doc_ocr_det"
+backend: "onnxruntime"
+max_batch_size: 1
+
+input [
+  {
+    name: "x"
+    data_type: TYPE_FP32
+    dims: [ 3, -1, -1 ]     # [C, H, W]  — H,W multiples of 32
+  }
+]
+
+output [
+  {
+    name: "sigmoid_0.tmp_0"
+    data_type: TYPE_FP32
+    dims: [ 1, -1, -1 ]     # [1, H, W]  — probability map
+  }
+]
+
+instance_group [{ kind: KIND_CPU, count: 1 }]
+
+dynamic_batching { max_queue_delay_microseconds: 100 }

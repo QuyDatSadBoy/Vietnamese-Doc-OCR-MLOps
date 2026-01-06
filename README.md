@@ -1,443 +1,452 @@
 <div align="center">
 
-# 🇻🇳 Vietnamese Document OCR — End-to-End MLOps Pipeline
+# Vietnamese Document OCR Serving Model - MLOps Pipeline
 
-<p align="center">
-  <img src="images/PipelineAllcode.png" alt="MLOps Pipeline Architecture" width="950"/>
+**Architecture-driven MLOps pipeline for Vietnamese administrative document OCR**
+
+<p>
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white">
+  <img alt="Airflow" src="https://img.shields.io/badge/Data%20Pipeline-Apache%20Airflow-017CEE">
+  <img alt="Kafka" src="https://img.shields.io/badge/Streaming-Kafka%20%2B%20Flink-231F20">
+  <img alt="Feast" src="https://img.shields.io/badge/Feature%20Store-Feast-2F6FED">
+  <img alt="MLflow" src="https://img.shields.io/badge/Model%20Registry-MLflow-0194E2">
+  <img alt="Jenkins" src="https://img.shields.io/badge/Deployment-Jenkins-D24939">
+  <img alt="KServe" src="https://img.shields.io/badge/Serving-KServe%20ModelMesh-005571">
 </p>
 
-<p align="center">
-  <a href="https://github.com/PaddlePaddle/PaddleOCR"><img src="https://img.shields.io/badge/PaddleOCR-3.x%20%2B%20VL-orange?logo=paddlepaddle" alt="PaddleOCR"/></a>
-  <a href="https://kserve.github.io/website/"><img src="https://img.shields.io/badge/Serving-KServe%20ModelMesh-blue" alt="KServe"/></a>
-  <a href="https://airflow.apache.org/"><img src="https://img.shields.io/badge/Pipeline-Apache%20Airflow-017CEE?logo=apacheairflow" alt="Airflow"/></a>
-  <a href="https://mlflow.org/"><img src="https://img.shields.io/badge/Tracking-MLflow-0194E2?logo=mlflow" alt="MLflow"/></a>
-  <img src="https://img.shields.io/badge/Python-3.9%2B-blue?logo=python" alt="Python"/>
-  <img src="https://img.shields.io/badge/License-MIT-green" alt="License"/>
-</p>
-
-<p align="center">
-  <b>Tác giả: Trần Quý Đạt</b> &nbsp;·&nbsp;
-  <a href="mailto:tranquydat.work@gmail.com">tranquydat.work@gmail.com</a>
-</p>
+**Author:** Quy Dat  
+**Email:** [tranquydat.work@gmail.com](mailto:tranquydat.work@gmail.com)
 
 </div>
 
 ---
 
-## Tổng quan
+## Architecture
 
-Dự án xây dựng một **MLOps pipeline hoàn chỉnh cấp production** cho bài toán Nhận dạng Ký tự Quang học (OCR) trên tài liệu hành chính tiếng Việt. Pipeline bao gồm toàn bộ vòng đời từ thu thập dữ liệu thô, xử lý stream thời gian thực, huấn luyện phân tán, đến triển khai mô hình với khả năng mở rộng tự động trên Kubernetes.
+The diagram below is the system contract for this repository. Every major directory and runtime component maps to one block in this architecture: batch data processing, fake stream ingestion, feature storage, distributed training, model registry, deployment automation, artifact storage, Kubernetes deployment, ModelMesh serving, and the public serving API.
 
-| | |
-|---|---|
-| **Dataset** | [MC-OCR 2021](https://aihub.vn/competitions/1) — Vietnamese administrative document OCR dataset |
-| **Mô hình** | [PaddleOCR 3.x + PaddleOCR-VL](https://github.com/PaddlePaddle/PaddleOCR) — State-of-the-art OCR với Vision-Language capabilities, nhận dạng dấu tiếng Việt và document parsing tốt nhất thực tế, **lựa chọn số 1 cho production** |
+![Vietnamese Document OCR Serving Model MLOps Architecture](assets/images/architecture_overview.png)
 
----
+## Project Goal
 
-## Kiến trúc Pipeline
+This project builds a complete MLOps workflow for serving a Vietnamese document OCR model. It starts from the MC-OCR 2021 dataset, prepares features, trains OCR models, registers artifacts, optimizes models for serving, deploys them to Kubernetes, and exposes inference through a model serving API.
 
-Pipeline được chia thành **6 giai đoạn** hoạt động liên tiếp:
+The architecture is split into five connected pipelines:
 
-```
-MC-OCR 2021
-    │
-    ▼
-┌─────────────────────────────────────────────────────────────┐
-│  STAGE 1 · DATA PIPELINE (Apache Airflow)                   │
-│  Load Images → Preprocess (deskew/pad) → HOG Features       │
-│                                        → PostgreSQL          │
-└─────────────────────────────┬───────────────────────────────┘
-                              │
-          ┌───────────────────┼───────────────────┐
-          ▼                                       ▼
-┌─────────────────────┐              ┌────────────────────────┐
-│  STAGE 2 · STREAM   │              │  STAGE 3 · FEATURE     │
-│  Kafka + Flink      │  ──sync──►   │  STORE (Feast)         │
-│  Producer → Topic   │              │  PostgreSQL (offline)  │
-│  → Redis + Postgres │              │  Redis (online)        │
-└─────────────────────┘              └────────────┬───────────┘
-                                                  │
-                                                  ▼
-                              ┌───────────────────────────────┐
-                              │  STAGE 4 · TRAINING (Kubeflow)│
-                              │  Feast pull features          │
-                              │  PaddleJob (2× GPU workers)   │
-                              │  PaddleOCR 3.x fine-tuning    │
-                              │  → MLflow Model Registry      │
-                              └────────────────┬──────────────┘
-                                               │
-                                               ▼
-                              ┌───────────────────────────────┐
-                              │  STAGE 5 · CI/CD (Jenkins)    │
-                              │  paddle2onnx export           │
-                              │  pytest (25+ test cases)      │
-                              │  Upload ONNX → MinIO (S3)     │
-                              │  kubectl apply KServe         │
-                              └────────────────┬──────────────┘
-                                               │
-                                               ▼
-                              ┌───────────────────────────────┐
-                              │  STAGE 6 · SERVING            │
-                              │  KServe ModelMesh             │
-                              │  NVIDIA Triton (ONNX Runtime) │
-                              │  det → crop → rec → CTC decode│
-                              └───────────────────────────────┘
-```
-
----
-
-## Technology Stack
-
-| Thành phần | Công nghệ | Ghi chú |
+| Pipeline | Components | Responsibility |
 |---|---|---|
-| **OCR Model** | PaddleOCR 3.x + PaddleOCR-VL | PP-OCRv5 · Vision-Language · tốt nhất cho tiếng Việt |
-| **Deep Learning** | PaddlePaddle 3.0 | Distributed training with Fleet |
-| **Data Pipeline** | Apache Airflow 2.x | Batch ingest · preprocess · feature extraction |
-| **Stream Processing** | Apache Kafka + Flink | Confluent 7.5 · real-time document ingestion |
-| **Feature Store** | Feast 0.40 | PostgreSQL offline · Redis online |
-| **Experiment Tracking** | MLflow 2.14 | Model registry · artifact tracking |
-| **Distributed Training** | Kubeflow PaddleJob | 2 GPU workers · ReadWriteMany PVC |
-| **CI/CD** | Jenkins LTS | Build → Test → ONNX export → Deploy |
-| **Model Storage** | MinIO (S3-compatible) | `s3://modelmesh-models/ocr/` |
-| **ONNX Export** | paddle2onnx 1.3 | Det + Rec → ONNX opset 11 |
-| **Model Serving** | NVIDIA Triton 23.09 | ONNX Runtime · dynamic batching |
-| **Serving Orch.** | KServe ModelMesh 0.11+ | HPA auto-scaling (2–3 replicas · 75% CPU) |
-| **Infrastructure** | Kubernetes 1.27+ | Multi-pod · Model Mesh pattern |
-| **Testing** | pytest 8.x | 25+ test cases · preprocessing/model/streaming |
+| Data pipeline | MC-OCR 2021, Apache Airflow, PostgreSQL | Load images, preprocess them, extract features, and persist offline training data |
+| Streaming pipeline | Kafka, Apache Flink, Redis, PostgreSQL | Simulate real-time document streams and synchronize online/offline stores |
+| Training pipeline | Feast, Kubeflow, MLflow | Pull features, prepare training data, run distributed training, evaluate, and register artifacts |
+| Deployment pipeline | Jenkins, ONNX, MinIO, KServe, Kubernetes | Optimize, test, package, upload, deploy, and scale serving models |
+| Serving pipeline | MinIO, ModelMesh, pods, Model Serving API | Load model artifacts, route inference traffic, and return OCR results to users |
 
----
+## End-to-End Flow
 
-## Cấu trúc thư mục
-
-```
-Vietnamese-Doc-OCR-MLOps/
-│
-├── constants.py                        # Bảng ký tự tiếng Việt (212 chars) · CTC blank · image dims
-├── requirements.txt                    # Python dependencies (PaddleOCR 3.x stack)
-├── docker-compose.yml                  # Local dev: MLflow + training container + Jenkins
-├── Jenkinsfile                         # CI/CD: build → paddle2onnx → pytest → MinIO → KServe
-├── .env.example                        # Template biến môi trường
-├── mlops-pipeline.excalidraw           # Sơ đồ kiến trúc (editable)
-│
-├── data_pipeline/                      ← STAGE 1: Apache Airflow
-│   ├── dags/
-│   │   └── ocr_data_pipeline.py        # DAG hàng ngày: load → preprocess → feature extract
-│   └── operators/
-│       ├── load_image.py               # Copy ảnh MC-OCR 2021 vào thư mục xử lý
-│       ├── preprocess_image.py         # Deskew + resize/pad về 64×256 grayscale
-│       └── feature_extraction.py      # HOG features → PostgreSQL (upsert)
-│
-├── streaming/                          ← STAGE 2: Kafka + Flink
-│   ├── produce.py                      # Producer: base64-encode ảnh → topic `ocr-images`
-│   ├── flink_processor.py             # Consumer: Redis (online) + PostgreSQL (offline)
-│   ├── docker-compose.yml             # Zookeeper · Kafka · Schema Registry · Connect · TimescaleDB
-│   ├── Dockerfile                     # Producer container (python:3.8-slim)
-│   ├── run.sh                         # Đăng ký Kafka connector
-│   └── kafka_connector/
-│       └── connect-timescaledb-sink.json
-│
-├── feature_store/                      ← STAGE 3: Feast
-│   ├── feature_store.yaml             # Offline: PostgreSQL · Online: Redis
-│   └── features/
-│       └── ocr_features.py            # Entity, FeatureView, HOG schema (TTL 30 ngày)
-│
-├── distributed_training/               ← STAGE 4: Kubeflow PaddleJob
-│   ├── mwt.py                          # Entry point: --prepare · --train · --evaluate
-│   ├── export_onnx.py                  # paddle2onnx: det + rec PaddleInfer → ONNX
-│   ├── Dockerfile                      # paddlepaddle/paddle:3.0.0-gpu base image
-│   ├── build.sh                        # Build & push Docker image
-│   ├── configs/
-│   │   ├── vi_dict.txt                 # Từ điển ký tự tiếng Việt (212 ký tự)
-│   │   ├── det/mc_ocr_det.yml          # DBNet++ · PPLCNetV3 · cosine LR · 500 epochs
-│   │   └── rec/mc_ocr_rec.yml          # SVTR-LCNet · MobileNetV1 · CTC · 100 epochs
-│   ├── nets/
-│   │   └── nn.py                       # CTC greedy decode · PaddleOCR engine builder
-│   └── utils/
-│       ├── config.py                   # Hyperparams · paths · constants
-│       ├── dataset.py                  # MC-OCR 2021 COCO format → PaddleOCR label file
-│       ├── image_utils.py             # Det/rec preprocessing · augmentation
-│       └── label_utils.py             # CTC encode/decode · Vietnamese char mapping
-│
-├── api/                                ← STAGE 5/6: Inference & Upload
-│   ├── triton_client.py               # Full OCR: det → crop → rec → CTC decode (HTTP)
-│   └── upload_model_to_minio.py       # Push model_repo/ lên MinIO S3
-│
-├── deployments/                        ← STAGE 6: Kubernetes manifests
-│   ├── triton-servingruntime.yaml     # ServingRuntime: Triton 23.09 · ONNX · HPA
-│   ├── triton-isvc.yaml               # InferenceService: vn_doc_ocr_det + vn_doc_ocr_rec
-│   └── mwt.yaml                       # Kubeflow PaddleJob (2 workers · GPU · PVC 50Gi)
-│
-├── model_repo/                         # Triton model repository
-│   ├── vn_doc_ocr_det/
-│   │   ├── config.pbtxt               # ONNX backend · dynamic input (3, -1, -1)
-│   │   └── 1/                         # ← model.onnx sau khi export
-│   └── vn_doc_ocr_rec/
-│       ├── config.pbtxt               # ONNX backend · fixed (3, 48, 320) · batch 8
-│       └── 1/                         # ← model.onnx sau khi export
-│
-├── mlflow/
-│   └── Dockerfile                     # MLflow tracking server
-├── notebooks/
-│   └── debug.ipynb                    # Dataset exploration · generator prototype
-└── tests/
-    ├── conftest.py                     # Fixtures: sample images · logits
-    ├── test_preprocessing.py          # Rec/det shape · dtype · normalization · padding
-    ├── test_model.py                  # CTC decode · blank collapse · valid chars
-    ├── test_triton_client.py          # Triton client · preprocess · decode · FileNotFound
-    └── test_streaming.py             # Flink message · Redis TTL · Kafka producer format
+```text
+MC-OCR 2021 Dataset Source
+    -> Airflow Data Pipeline
+    -> PostgreSQL Offline Store
+    -> Feast Feature Store
+    -> Kubeflow Training Pipeline
+    -> MLflow Model Registry
+    -> Jenkins Deployment Pipeline
+    -> MinIO Model Storage
+    -> KServe / ModelMesh Serving
+    -> Model Serving API
+    -> Users
 ```
 
----
+The streaming branch runs in parallel:
 
-## Chi tiết Pipeline
-
-### Stage 1 · Data Pipeline (Apache Airflow)
-
-DAG `ocr_data_pipeline` chạy hàng ngày với 3 task tuần tự:
-
-```
-MC-OCR 2021 Source
-    │
-    ▼ [load_images]
-    Sao chép .jpg/.jpeg/.png → raw directory
-    │
-    ▼ [preprocess_images]  
-    Deskew (minimum-area rect) + resize/pad → 64×256 grayscale PNG
-    │
-    ▼ [extract_features]
-    HOG features per image → upsert bảng ocr_image_features (PostgreSQL)
+```text
+MC-OCR 2021 Dataset Source
+    -> Fake Stream Data
+    -> Kafka
+    -> Apache Flink Stream Processing
+    -> Redis Online Store
+    <-> PostgreSQL Offline Store
 ```
 
-### Stage 2 · Stream Processing (Kafka + Flink)
+## Architecture to Code Map
 
-Mô phỏng real-time document ingestion cho online serving:
-
-```
-produce.py
-    │ base64-encode image → JSON message
-    ▼
-Kafka topic: ocr-images
-    │
-    ▼
-flink_processor.py
-    ├── Redis: key=ocr:image:{id}  →  online feature lookup  (TTL 24h)
-    └── PostgreSQL: ocr_stream_events  →  offline analytics
-```
-
-### Stage 3 · Feature Store (Feast)
-
-| Store | Backend | Mục đích |
-|---|---|---|
-| Offline | PostgreSQL | Batch retrieval cho training |
-| Online | Redis | Low-latency lookup khi serving |
-
-FeatureView `ocr_image_features`: HOG vector · image dimensions · label text · TTL 30 ngày.
-
-### Stage 4 · Distributed Training (Kubeflow + MLflow)
-
-```
-Feast → pull training features
-    │
-    ▼ mwt.py --prepare
-    MC-OCR 2021 COCO JSON → PaddleOCR label format (train_list.txt / val_list.txt)
-    │
-    ▼ kubectl apply -f deployments/mwt.yaml
-    Kubeflow PaddleJob: 2 worker × 1 GPU
-    ├── Detection: DBNet++ · PPLCNetV3 backbone · 500 epochs · cosine LR
-    └── Recognition: SVTR-LCNet · MobileNetV1 · CTC loss · 100 epochs
-    │
-    ▼ MLflow tracking
-    Params · metrics · checkpoints → Model Registry
-```
-
-### Stage 5 · CI/CD Pipeline (Jenkins)
-
-Triggered tự động khi có code push:
-
-```
-[Build Training Image] → push tranquydat/vn-doc-ocr-training:latest
-        │
-        ▼
-[Model Optimization - Export ONNX]
-    python distributed_training/export_onnx.py --all
-    ├── Det: PaddleInfer → ONNX (opset 11) → model_repo/vn_doc_ocr_det/1/model.onnx
-    └── Rec: PaddleInfer → ONNX (opset 11) → model_repo/vn_doc_ocr_rec/1/model.onnx
-        │
-        ▼
-[Model Testing]
-    pytest tests/ -v --tb=short  (25+ test cases)
-        │
-        ▼
-[Upload Model to MinIO]
-    python api/upload_model_to_minio.py
-    → s3://modelmesh-models/ocr/vn_doc_ocr_det/
-    → s3://modelmesh-models/ocr/vn_doc_ocr_rec/
-        │
-        ▼
-[Deploy to KServe]
-    kubectl apply -f deployments/triton-servingruntime.yaml
-    kubectl apply -f deployments/triton-isvc.yaml
-```
-
-Email alert khi fail → `tranquydat.work@gmail.com`
-
-### Stage 6 · Model Serving (KServe ModelMesh + Triton)
-
-```
-User request (image file)
-    │
-    ▼ api/triton_client.py
-    preprocess_for_det(image, short_side=736)
-    │
-    ▼ Triton HTTP: vn_doc_ocr_det
-    DBNet++ → probability map
-    │
-    ▼ decode_prob_map() → text box coordinates
-    Crop ROI images
-    │
-    ▼ Triton HTTP: vn_doc_ocr_rec  (dynamic batch [1,4,8])
-    SVTR-LCNet → character logits
-    │
-    ▼ ctc_greedy_decode() → Vietnamese text
-    Return: [{"box": (x1,y1,x2,y2), "text": "..."}]
-```
-
-KServe ModelMesh tự động scale: HPA · 2–3 replicas · ngưỡng CPU 75%.
-
----
-
-## Điều kiện cài đặt
-
-| Công cụ | Version |
+| Architecture Block | Repository Location |
 |---|---|
-| Python | ≥ 3.9 |
-| Docker + Docker Compose | ≥ 24.x |
-| Kubernetes | ≥ 1.27 (với KServe + Kubeflow đã cài) |
-| NVIDIA GPU (cho training) | CUDA 12.3 · cuDNN 9.0 |
+| Load Image | `data_pipeline/operators/load_image.py` |
+| Preprocessing Image | `data_pipeline/operators/preprocess_image.py` |
+| Feature Extraction | `data_pipeline/operators/feature_extraction.py` |
+| Airflow DAG | `data_pipeline/dags/ocr_data_pipeline.py` |
+| Fake Stream Data Producer | `streaming/produce.py` |
+| Flink Stream Processing | `streaming/flink_processor.py` |
+| Kafka/Flink/Redis stack | `streaming/docker-compose.yml` |
+| Kafka Connector | `streaming/kafka_connector/connect-timescaledb-sink.json` |
+| Feast Feature Store | `feature_store/feature_store.yaml`, `feature_store/features/ocr_features.py` |
+| Prepare Data / Distributed Train / Evaluate | `distributed_training/mwt.py`, `deployments/mwt.yaml` |
+| Model Optimization (ONNX) | `distributed_training/export_onnx.py` |
+| Deployment Pipeline | `Jenkinsfile` |
+| Ingest Serving-Model to S3 | `api/upload_model_to_minio.py` |
+| KServe Deployment and Scaling | `deployments/triton-servingruntime.yaml`, `deployments/triton-isvc.yaml` |
+| Model Serving API | `api/triton_client.py` |
+| Triton Model Repository | `model_repo/vn_doc_ocr_det/`, `model_repo/vn_doc_ocr_rec/` |
 
----
+## Data Pipeline
 
-## Quick Start
+The batch pipeline is orchestrated by Apache Airflow.
 
-### 1. Clone & Install
-
-```bash
-git clone https://github.com/tranquydat/vn-doc-ocr-mlops.git
-cd vn-doc-ocr-mlops
-pip install -r requirements.txt
+```text
+MC-OCR 2021 Dataset Source
+    -> Load Image
+    -> Preprocessing Image
+    -> Feature Extraction
+    -> PostgreSQL Offline Store
 ```
 
-### 2. Cấu hình môi trường
+| Step | Output |
+|---|---|
+| Load Image | Raw image records from MC-OCR 2021 |
+| Preprocessing Image | Deskewed, resized, padded, normalized images |
+| Feature Extraction | Extracted image features written to PostgreSQL |
+
+Run the Airflow DAG:
 
 ```bash
-cp .env.example .env
-# Chỉnh sửa .env: MINIO_ENDPOINT, POSTGRES_HOST, REDIS_URL, MLFLOW_TRACKING_URI
-```
-
-### 3. Khởi động services (local)
-
-```bash
-# MLflow + Jenkins
-docker compose up -d
-
-# Kafka + Flink streaming stack
-cd streaming && docker compose up -d
-```
-
-### 4. Chạy Data Pipeline (Airflow)
-
-```bash
-# Cài đặt Airflow variables trước:
-# mc_ocr_source_dir, mc_ocr_raw_dir, mc_ocr_processed_dir
 airflow dags trigger ocr_data_pipeline
 ```
 
-### 5. Khởi tạo Feature Store
+## Streaming Pipeline
+
+The streaming branch simulates real-time image ingestion from the same dataset source.
+
+```text
+MC-OCR 2021 Dataset Source
+    -> Fake Stream Data
+    -> Kafka
+    -> Apache Flink
+    -> Redis Online Store
+    <-> PostgreSQL Offline Store
+```
+
+Kafka topic monitoring:
+
+![Kafka Topic Tab](assets/images/topic_tab.png)
+
+Kafka connector:
+
+![Kafka Connector](assets/images/connector.png)
+
+Start the streaming services:
+
+```bash
+cd streaming
+docker compose up -d
+./run.sh register_connector kafka_connector/connect-timescaledb-sink.json
+```
+
+Produce sample messages:
+
+```bash
+python streaming/produce.py
+```
+
+## Feature Store
+
+Feast connects the offline and online stores to the training and serving paths.
+
+```text
+PostgreSQL Offline Store
+    -> Feast
+    -> Pull Features for Training
+    -> Kubeflow Training Pipeline
+
+Redis Online Store
+    -> Low-latency feature access
+```
+
+| Store | Backend | Purpose |
+|---|---|---|
+| Offline Store | PostgreSQL | Batch feature retrieval for training |
+| Online Store | Redis | Fast feature/event lookup for online workflows |
+
+Apply feature definitions:
 
 ```bash
 feast -c feature_store apply
-feast -c feature_store materialize-incremental $(date -u +%Y-%m-%dT%H:%M:%S)
+feast -c feature_store materialize-incremental "$(date -u +%Y-%m-%dT%H:%M:%S)"
 ```
 
-### 6. Distributed Training (Kubeflow)
+## Training Pipeline
+
+The training pipeline is executed on Kubernetes through Kubeflow.
+
+```text
+Feast
+    -> Prepare Data
+    -> Distributed Train
+    -> Evaluate
+    -> Save Model and Artifacts
+    -> MLflow Model Registry
+```
+
+| Step | Purpose |
+|---|---|
+| Prepare Data | Convert and prepare OCR data for training |
+| Distributed Train | Train OCR detection and recognition models on Kubernetes |
+| Evaluate | Validate checkpoints and record metrics |
+| Save Model and Artifacts | Persist model outputs, metrics, and metadata |
+| Register in MLflow | Keep model versions traceable for deployment |
+
+Run the training path:
 
 ```bash
-# Chuẩn bị dữ liệu MC-OCR 2021
 python distributed_training/mwt.py --prepare
-
-# Triển khai Kubeflow PaddleJob (2 GPU workers)
 kubectl apply -f deployments/mwt.yaml
-
-# Theo dõi MLflow
-open http://localhost:5000
+python distributed_training/mwt.py --evaluate
 ```
 
-### 7. Export ONNX & Upload MinIO
+MLflow Model Registry:
 
-```bash
-python distributed_training/export_onnx.py --all
-python api/upload_model_to_minio.py
+![MLflow Model Registry](assets/images/mlflow%20_modelregistry.png)
+
+## Deployment Pipeline
+
+Jenkins owns the serving-oriented deployment path. In the architecture, it is started by a deployment trigger cron and then prepares the model for Kubernetes serving.
+
+```text
+Deployment Trigger Cron
+    -> Jenkins
+    -> Model Optimization (ONNX)
+    -> Model Testing
+    -> Runtime Containerization
+    -> Ingest Serving-Model to S3
+    -> Deployment and Scaling
+    -> KServe
+    -> Kubernetes API Server
 ```
 
-### 8. Deploy lên KServe
+| Stage | Output |
+|---|---|
+| Model Optimization (ONNX) | ONNX model files compatible with the serving runtime |
+| Model Testing | Verified preprocessing, model client, and streaming behavior |
+| Runtime Containerization | Docker image for reproducible execution |
+| Ingest Serving-Model to S3 | Model artifacts uploaded to MinIO |
+| Deployment and Scaling | KServe resources applied through `kubectl` |
+
+Jenkins dashboard:
+
+![Jenkins UI](assets/images/jenkins_ui.png)
+
+Pipeline stage view:
+
+![Jenkins Pipeline Build](assets/images/ui_build_jenkins.png)
+
+DockerHub push result:
+
+![DockerHub Push Result](assets/images/result_push_dockerhub.png)
+
+GitHub webhook connection:
+
+![Jenkins GitHub Webhook Result](assets/images/result_connect_jenkins_github.png)
+
+Jenkins credential setup:
+
+![Jenkins Credential](assets/images/add_credential.png)
+
+DockerHub credential setup:
+
+![DockerHub Credential](assets/images/add_credential_dockerhub.png)
+
+Ngrok forwarding:
+
+![Ngrok Forwarding](assets/images/ngrok_forwarding.png)
+
+GitHub webhook setup:
+
+![GitHub Webhook](assets/images/webhook_github.png)
+
+## Model Storage and Serving
+
+MinIO stores serving artifacts. KServe deploys and scales the inference service. ModelMesh loads models from storage and routes inference traffic across serving pods.
+
+```text
+MinIO
+    -> Model Artifacts
+    -> ModelMesh Serving
+    -> Serving Pods
+    -> Model Serving API
+    -> Users
+```
+
+KServe InferenceService:
+
+![KServe InferenceService](assets/images/isvc.png)
+
+MinIO credentials:
+
+![MinIO Credentials](assets/images/minio-credentials.png)
+
+Deploy serving resources:
 
 ```bash
 kubectl apply -f deployments/triton-servingruntime.yaml
 kubectl apply -f deployments/triton-isvc.yaml
+kubectl get isvc
 ```
 
-### 9. Chạy inference
+Run OCR inference:
 
 ```python
 from api.triton_client import ocr
 
 results = ocr("path/to/vietnamese_document.jpg")
-for r in results:
-    print(r["text"], "→", r["box"])
+print(results)
 ```
 
----
+Inference sequence:
 
-## Tests
+```text
+User Image
+    -> Model Serving API
+    -> Detection Model: vn_doc_ocr_det
+    -> Text Region Boxes
+    -> Recognition Model: vn_doc_ocr_rec
+    -> CTC Decode
+    -> Vietnamese OCR Result
+```
+
+## Repository Structure
+
+```text
+Vietnamese-Doc-OCR-MLOps/
+|-- api/
+|   |-- triton_client.py
+|   `-- upload_model_to_minio.py
+|-- assets/
+|   `-- images/
+|       `-- architecture_overview.png
+|-- data_pipeline/
+|   |-- dags/ocr_data_pipeline.py
+|   `-- operators/
+|-- deployments/
+|   |-- mwt.yaml
+|   |-- triton-isvc.yaml
+|   `-- triton-servingruntime.yaml
+|-- distributed_training/
+|   |-- configs/
+|   |-- export_onnx.py
+|   |-- mwt.py
+|   `-- utils/
+|-- feature_store/
+|   |-- feature_store.yaml
+|   `-- features/ocr_features.py
+|-- model_repo/
+|   |-- vn_doc_ocr_det/config.pbtxt
+|   `-- vn_doc_ocr_rec/config.pbtxt
+|-- streaming/
+|   |-- docker-compose.yml
+|   |-- flink_processor.py
+|   `-- produce.py
+|-- tests/
+|-- docker-compose.yml
+|-- Jenkinsfile
+|-- requirements.txt
+`-- README.md
+```
+
+## Quick Start
+
+Install dependencies:
+
+```bash
+git clone https://github.com/QuyDatSadBoy/Vietnamese-Doc-OCR-MLOps.git
+cd Vietnamese-Doc-OCR-MLOps
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+```
+
+Start local services:
+
+```bash
+docker compose up -d
+cd streaming
+docker compose up -d
+cd ..
+```
+
+Run tests:
 
 ```bash
 pytest tests/ -v --tb=short
 ```
 
-| Module | Nội dung |
+Run the model deployment flow:
+
+```bash
+python distributed_training/mwt.py --prepare
+python distributed_training/export_onnx.py --all
+python api/upload_model_to_minio.py
+kubectl apply -f deployments/triton-servingruntime.yaml
+kubectl apply -f deployments/triton-isvc.yaml
+```
+
+## Environment Variables
+
+The environment template is available in `.env.example`.
+
+| Variable | Description |
 |---|---|
-| `test_preprocessing.py` | Rec/det preprocess shape · dtype · normalization · padding edge cases |
-| `test_model.py` | CTC greedy decode · blank collapse · valid Vietnamese chars |
-| `test_triton_client.py` | Triton client preprocess · decode · FileNotFoundError |
-| `test_streaming.py` | Flink message processing · Redis TTL · Kafka producer format |
+| `MLFLOW_TRACKING_URI` | MLflow tracking server |
+| `TRITON_URL` | Triton HTTP endpoint |
+| `MINIO_ENDPOINT` | MinIO endpoint |
+| `MINIO_ACCESS_KEY` | MinIO access key |
+| `MINIO_SECRET_KEY` | MinIO secret key |
+| `OFFLINE_STORE_URL` | PostgreSQL offline store URL |
+| `REDIS_URL` | Redis online store URL |
+| `KAFKA_BOOTSTRAP_SERVERS` | Kafka bootstrap servers |
+| `KAFKA_TOPIC` | Kafka topic used for OCR image messages |
 
----
+## Useful Commands
 
-## Biến môi trường
+```bash
+# Airflow data pipeline
+airflow dags trigger ocr_data_pipeline
 
-| Biến | Mặc định | Mô tả |
-|---|---|---|
-| `MLFLOW_TRACKING_URI` | `http://mlflow:5000` | MLflow server URL |
-| `TRITON_URL` | `http://localhost:8000` | Triton HTTP endpoint |
-| `MINIO_ENDPOINT` | `localhost:9000` | MinIO S3 endpoint |
-| `MINIO_ACCESS_KEY` | `minioadmin` | MinIO access key |
-| `MINIO_SECRET_KEY` | `minioadmin` | MinIO secret key |
-| `OFFLINE_STORE_URL` | `postgresql://feast:feast@localhost:5432/feast` | PostgreSQL DSN |
-| `REDIS_URL` | `redis://localhost:6379/0` | Redis connection string |
-| `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Kafka bootstrap servers |
-| `KAFKA_TOPIC` | `ocr-images` | Kafka topic name |
+# Kafka and Flink stack
+cd streaming && docker compose up -d
 
----
+# Feast feature definitions
+feast -c feature_store apply
 
-## Tác giả
+# Distributed training job
+kubectl apply -f deployments/mwt.yaml
 
-**Trần Quý Đạt**  
-[tranquydat.work@gmail.com](mailto:tranquydat.work@gmail.com)
+# Export ONNX models
+python distributed_training/export_onnx.py --all
+
+# Upload model artifacts to MinIO
+python api/upload_model_to_minio.py
+
+# Deploy KServe resources
+kubectl apply -f deployments/triton-servingruntime.yaml
+kubectl apply -f deployments/triton-isvc.yaml
+
+# Tests
+pytest tests/ -v --tb=short
+```
+
+## Notes
+
+- `assets/images/architecture_overview.png` is the primary architecture diagram and should be updated whenever the system design changes.
+- The deployment path is intentionally separated from the training path: MLflow keeps model versions traceable, while Jenkins prepares serving artifacts and deploys them.
+- The streaming path is a simulated real-time branch that keeps Redis and PostgreSQL aligned for online and offline workflows.
+- Do not commit real secrets in `.env`; use `.env.example` as the template.
 
 ---
 
 <div align="center">
-  <sub>Built with ❤️ — PaddleOCR 3.x · KServe · Apache Airflow · Feast · MLflow · Jenkins · Kubernetes</sub>
+
+**Vietnamese Document OCR Serving Model - MLOps Pipeline**  
+Airflow · Kafka · Flink · Redis · PostgreSQL · Feast · Kubeflow · MLflow · Jenkins · MinIO · KServe · ModelMesh
+
 </div>
-# Vietnamese-Doc-OCR-MLOps

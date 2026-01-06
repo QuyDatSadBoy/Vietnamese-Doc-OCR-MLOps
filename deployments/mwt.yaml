@@ -1,0 +1,43 @@
+# Kubeflow PaddleJob — PP-OCRv4 Distributed Fine-tuning
+# Author: Trần Quý Đạt | tranquydat.work@gmail.com
+apiVersion: kubeflow.org/v1
+kind: PaddleJob
+metadata:
+  name: vn-doc-ocr-paddlejob
+  namespace: distributed-training
+spec:
+  paddleReplicaSpecs:
+    Worker:
+      replicas: 2
+      restartPolicy: Never
+      template:
+        spec:
+          containers:
+            - name: paddleocr
+              image: tranquydat/vn-doc-ocr-training:latest
+              command: ["python", "distributed_training/mwt.py", "--train"]
+              resources:
+                requests:
+                  cpu: "4"
+                  memory: 8Gi
+                limits:
+                  nvidia.com/gpu: "1"
+              volumeMounts:
+                - mountPath: /workspace
+                  name: training-data
+          volumes:
+            - name: training-data
+              persistentVolumeClaim:
+                claimName: mwt-volume
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mwt-volume
+  namespace: distributed-training
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 50Gi

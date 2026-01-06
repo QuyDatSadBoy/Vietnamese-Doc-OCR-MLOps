@@ -1,0 +1,23 @@
+# feature_store/feature_store.yaml
+# Author : Trần Quý Đạt | tranquydat.work@gmail.com
+# Feast feature store configuration for the OCR MLOps pipeline.
+
+project: vn_doc_ocr
+provider: local
+
+offline_store:
+  type: postgres
+  host: ${POSTGRES_HOST:-localhost}
+  port: 5432
+  database: feast
+  user: feast
+  password: ${POSTGRES_PASSWORD:-feast}
+  db_schema: public
+
+online_store:
+  type: redis
+  connection_string: "${REDIS_URL:-localhost:6379}"
+
+registry: ./feature_store/registry.db
+
+entity_key_serialization_version: 2
