@@ -6,6 +6,7 @@
 
 <p>
   <img alt="Python" src="https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white">
+  <img alt="PaddleOCR" src="https://img.shields.io/badge/OCR-PaddleOCR%203.6.0%20%2B%20VL--1.6-orange">
   <img alt="Airflow" src="https://img.shields.io/badge/Data%20Pipeline-Apache%20Airflow-017CEE">
   <img alt="Kafka" src="https://img.shields.io/badge/Streaming-Kafka%20%2B%20Flink-231F20">
   <img alt="Feast" src="https://img.shields.io/badge/Feature%20Store-Feast-2F6FED">
@@ -30,6 +31,16 @@ The diagram below is the system contract for this repository. Every major direct
 ## Project Goal
 
 This project builds a complete MLOps workflow for serving a Vietnamese document OCR model. It starts from the MC-OCR 2021 dataset, prepares features, trains OCR models, registers artifacts, optimizes models for serving, deploys them to Kubernetes, and exposes inference through a model serving API.
+
+## Model Choice
+
+The production OCR baseline is **PaddleOCR 3.6.0 + PaddleOCR-VL-1.6**. This version is selected because it is the strongest practical choice for document OCR in this architecture: it keeps high OCR accuracy, handles Vietnamese diacritics well through the PaddleOCR multilingual stack, and adds stronger document parsing for tables, formulas, seals, charts, and complex layouts.
+
+| Model Stack | Release Date | Practical Rank | Accuracy | Vietnamese Text | Document Parsing | Production Decision |
+|---|---|---|---|---|---|---|
+| PaddleOCR 3.6.0 + PaddleOCR-VL-1.6 | 2026-05-28 | Highest practical option | Very high | Strong diacritics support | Strong parsing for complex documents | Number one production choice |
+
+Model reference: `paddleocr==3.6.0` is pinned in `requirements.txt` and the training Docker image.
 
 The architecture is split into five connected pipelines:
 
